@@ -5,9 +5,10 @@ package bintray
 import java.nio.file.Files
 
 import akka.actor.ActorSystem
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, Materializer}
 import akka.stream.scaladsl.{FileIO, Flow, Keep, Source}
 import akka.util.ByteString
+import ch.epfl.scala.index.data.cleanup.NonStandardLib
 import ch.epfl.scala.index.data.download.PlayWsDownloader
 import ch.epfl.scala.index.model._
 import com.github.nscala_time.time.Imports._
@@ -16,25 +17,23 @@ import org.json4s._
 import org.json4s.native.Serialization.write
 import org.slf4j.LoggerFactory
 import play.api.libs.ws.ahc.{AhcCurlRequestLogger, AhcWSClient}
-import play.api.libs.ws.{WSRequest, WSResponse}
+import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
 
-import scala.concurrent.{Await, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
-class BintrayListPoms(paths: DataPaths)(
+class BintrayListPoms(paths: DataPaths, bintrayClient: BintrayClient)(
     implicit val system: ActorSystem,
-    implicit val materializer: ActorMaterializer
+    implicit val materializer: Materializer
 ) extends BintrayProtocol
     with PlayWsDownloader {
 
+  implicit val ec: ExecutionContext = system.dispatcher
   private val log = LoggerFactory.getLogger(getClass)
 
-  val bintrayClient = new BintrayClient(paths)
   import bintrayClient._
 
   assert(bintrayCredentials.nonEmpty, "this steps requires bintray user")
-
-  import system.dispatcher
 
   /** paginated search query for bintray - append the query string to
    * the request object
@@ -42,13 +41,12 @@ class BintrayListPoms(paths: DataPaths)(
    * @param page the page credentials to download
    * @return
    */
-  private def discover(wsClient: AhcWSClient,
-                       page: PomListDownload): WSRequest = {
+  private def discover(wsClient: WSClient, page: PomListDownload): WSRequest = {
     val query = page.lastSearchDate.fold(Seq[(String, String)]())(
       after => Seq("created_after" -> (after.toLocalDateTime.toString + "Z"))
     ) ++ Seq("name" -> s"${page.query}*.pom", "start_pos" -> page.page.toString)
 
-    withAuth(wsClient.url(s"$bintrayApi/search/file"))
+    withAuth(wsClient.url(s"$apiUrl/search/file"))
       .withQueryStringParameters(query: _*)
       .withRequestFilter(AhcCurlRequestLogger())
   }
@@ -58,7 +56,6 @@ class BintrayListPoms(paths: DataPaths)(
       query: String,
       lastCheckDate: Option[DateTime]
   ): Future[InternalBintrayPagination] = {
-    val client = wsClient
     val request = discover(client, PomListDownload(query, 0, lastCheckDate))
 
     request
@@ -68,7 +65,7 @@ class BintrayListPoms(paths: DataPaths)(
         if (200 == response.status) {
           Future.successful {
             InternalBintrayPagination(
-              remainingPages(response)
+              BintrayClient.remainingPages(response)
             )
           }
         } else {
@@ -133,7 +130,9 @@ class BintrayListPoms(paths: DataPaths)(
     val queried = BintrayMeta.load(paths)
 
     val mostRecentQueriedDate =
-      queried.find(_.name.contains(scalaVersion)).map(_.created - 2.month)
+      queried
+        .find(_.name.contains(scalaVersion))
+        .map(search => new DateTime(search.created) - 2.month)
 
     performSearchAndDownload(s"Bintray: Search POMs for scala $scalaVersion",
                              queried,
@@ -157,7 +156,8 @@ class BintrayListPoms(paths: DataPaths)(
       )
     }
 
-    val mostRecentQueriedDate = queried.find(filter).map(_.created - 2.month)
+    val mostRecentQueriedDate =
+      queried.find(filter).map(search => new DateTime(search.created) - 2.month)
 
     performSearchAndDownload(s"Bintray: Search Poms for $groupId:$artifact",
                              queried,
@@ -221,5 +221,26 @@ class BintrayListPoms(paths: DataPaths)(
     writeMergedPoms(merged)
 
     ()
+  }
+}
+
+object BintrayListPoms {
+  def run(
+      paths: DataPaths,
+      scalaVersions: Seq[String],
+      libs: Seq[NonStandardLib]
+  )(implicit mat: Materializer, sys: ActorSystem): Unit = {
+    for (bintrayClient <- BintrayClient.create(paths.credentials)) {
+      val listPoms = new BintrayListPoms(paths, bintrayClient)
+
+      for (scalaVersion <- scalaVersions) {
+        listPoms.run(scalaVersion)
+      }
+
+      /* do a search for non standard lib poms */
+      for (lib <- libs) {
+        listPoms.run(lib.groupId, lib.artifactId)
+      }
+    }
   }
 }
