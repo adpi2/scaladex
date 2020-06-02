@@ -49,6 +49,59 @@ class BintrayClient(credentials: Path,
   /** Base URL of Bintray API */
   val apiUrl: String = s"$bintrayBase/api/v1"
 
+  def getAllPackages(subject: String, repo: String): Future[Seq[String]] = {
+    def getPage(page: Int) = {
+      val request = client
+        .url(s"$apiUrl/repos/$subject/$repo/packages")
+        .withQueryStringParameters("start_pos" -> page.toString)
+
+      withAuth(request).get()
+    }
+
+    val decodePackages = decodeSucessfulJson { json =>
+      json.children.map(child => (child \ "name").extract[String])
+    } _
+
+    fetchPaginatedResource(getPage)(decodePackages)
+  }
+
+  def getPackage(subject: String,
+                 repo: String,
+                 packageName: String): Future[BintrayPackage] = {
+    val request = client.url(s"$apiUrl/packages/$subject/$repo/$packageName")
+
+    withAuth(request).get.map {
+      decodeSucessfulJson { json =>
+        json.extract[BintrayPackage]
+      }
+    }
+  }
+
+  def searchFiles(subject: String,
+                  repo: String,
+                  fileName: String,
+                  createdAfter: String): Future[Seq[BintraySearch]] = {
+    def getPage(page: Int) = {
+      val request = client
+        .url(s"$apiUrl/search/file")
+        .withQueryStringParameters(
+          "name" -> fileName,
+          "subject" -> subject,
+          "repo" -> repo,
+          "created_after" -> createdAfter,
+          "start_pos" -> page.toString
+        )
+
+      withAuth(request).get()
+    }
+
+    val decodeFile = decodeSucessfulJson { json =>
+      json.children.map(_.extract[BintraySearch])
+    } _
+
+    fetchPaginatedResource(getPage)(decodeFile)
+  }
+
   def withAuth(request: WSRequest): WSRequest = {
     (bintrayCredentials.get("user"), bintrayCredentials.get("password")) match {
       case (Some(user), Some(password)) =>
