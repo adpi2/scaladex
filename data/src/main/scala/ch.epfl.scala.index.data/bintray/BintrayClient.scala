@@ -7,6 +7,7 @@ import java.nio.file.{Files, Path}
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import ch.epfl.scala.index.data.download.PlayWsClient
+import com.typesafe.scalalogging.LazyLogging
 import jawn.support.json4s.Parser
 import org.json4s.JsonAST.JValue
 import play.api.libs.ws.{WSAuthScheme, WSClient, WSRequest, WSResponse}
@@ -157,7 +158,7 @@ class BintrayClient(credentials: Path,
   }
 }
 
-object BintrayClient {
+object BintrayClient extends LazyLogging {
 
   def create(credentials: Path)(
       implicit mat: Materializer,
@@ -189,6 +190,10 @@ object BintrayClient {
         .ceil((total - nextPos).toDouble / perPage)
         .toInt
     } yield Seq.tabulate(remainingPageCount)(page => nextPos + page * perPage)
-    remainingPages.getOrElse(Seq())
+    val result  = remainingPages.getOrElse(Seq())
+    if (result.lastOption.getOrElse(0) > 9950) {
+      logger.warn(s"Bintray page limit exceeded, no more than 10000 results will be retrieved")
+      result.takeWhile(_ <= 9950)
+    } else result
   }
 }

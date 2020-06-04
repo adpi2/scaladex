@@ -7,6 +7,8 @@ import java.time.{OffsetDateTime, ZoneOffset}
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import ch.epfl.scala.index.data.DataPaths
+import ch.epfl.scala.index.data.cleanup.GithubRepoExtractor
+import ch.epfl.scala.index.data.github.GithubDownload
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.ivy.core.settings.IvySettings
 import org.apache.ivy.plugins.parser.xml.XmlModuleDescriptorParser
@@ -18,9 +20,11 @@ import scala.util.control.NonFatal
 import scala.util.matching.Regex
 
 class UpdateBintraySbtPlugins(
-    bintray: BintrayClient,
-    sbtPluginRepo: SbtPluginsData,
-    lastDownloadPath: Path
+   bintray: BintrayClient,
+   sbtPluginRepo: SbtPluginsData,
+   githubRepo: GithubRepoExtractor,
+   githubDownload: GithubDownload,
+   lastDownloadPath: Path
 )(implicit val ec: ExecutionContext)
     extends LazyLogging {
   private val dateTimeFormatter = DateTimeFormatter.ISO_DATE_TIME
@@ -45,6 +49,7 @@ class UpdateBintraySbtPlugins(
       oldReleases <- oldReleasesF
       newReleases <- newReleasesF
     } yield {
+      updateGithub(newReleases)
       sbtPluginRepo.update(oldReleases, newReleases)
       val now = format(OffsetDateTime.now(ZoneOffset.UTC))
       Files.write(lastDownloadPath, Seq(now).asJava)
@@ -56,16 +61,15 @@ class UpdateBintraySbtPlugins(
   ): Future[Seq[SbtPluginReleaseModel]] = {
     for {
       packageNames <- bintray.getAllPackages(baseSubject, baseRepo)
-
-      _ = println(s"found ${packageNames.size} packages")
       allPackages <- Future.traverse(packageNames)(
         bintray.getPackage(baseSubject, baseRepo, _)
       )
-
       packagesToUpdate = allPackages.filter(
         p => parse(p.updated).isAfter(lastUpdate)
       )
       packagesByRepo = packagesToUpdate.groupBy(p => (p.owner, p.repo))
+
+      _ = logger.info(s"found ${packagesToUpdate.size} packages to update in ${packagesByRepo.keys.size} repositories")
 
       sbtPlugins <- Future
         .traverse(packagesByRepo) {
@@ -83,17 +87,16 @@ class UpdateBintraySbtPlugins(
       packages: Seq[BintrayPackage],
       lastUpdate: OffsetDateTime
   ): Future[Seq[SbtPluginReleaseModel]] = {
-    println(s"loading ${packages.size} from $owner/$repo")
-    val packageNames = packages.map(_.name).toSet
+    logger.info(s"updating ${packages.size} packages from $owner/$repo")
+    val packageByName = packages.map(p => p.name -> p).toMap
     val createdAfter = format(lastUpdate)
     for {
       allIvyFiles <- bintray.searchFiles(owner, repo, "ivy.xml", createdAfter)
       filteredIvyFiles = allIvyFiles
-        .filter(file => packageNames.contains(file.`package`))
-        .filter(file => parse(file.created).isAfter(lastUpdate))
+        .filter(file => packageByName.contains(file.`package`))
       sbtPlugins <- Future
         .traverse(filteredIvyFiles)(
-          file => downloadPluginDescriptor(owner, repo, file)
+          file => downloadPluginDescriptor(owner, repo, packageByName(file.`package`), file)
         )
         .map(_.flatten)
     } yield sbtPlugins
@@ -102,6 +105,7 @@ class UpdateBintraySbtPlugins(
   private def downloadPluginDescriptor(
       owner: String,
       repo: String,
+      `package`: BintrayPackage,
       file: BintraySearch
   ): Future[Option[SbtPluginReleaseModel]] = {
     file.path match {
@@ -122,6 +126,7 @@ class UpdateBintraySbtPlugins(
               SbtPluginReleaseModel(
                 owner,
                 repo,
+                Option(`package`.vcs_url),
                 org,
                 artifact,
                 scalaVersion,
@@ -134,13 +139,19 @@ class UpdateBintraySbtPlugins(
             }
           } catch {
             case NonFatal(cause) =>
-              logger.error(s"Unable to fetch ivy.xml ${file.path}", cause)
+              logger.warn(s"Unable to fetch ${file.path}: ${cause.getMessage}")
               None
           }
         }
 
       case _ => Future.successful(None)
     }
+  }
+
+  private def updateGithub(sbtPlugins: Seq[SbtPluginReleaseModel]): Unit = {
+    val githubRepos = sbtPlugins.flatMap(plugin => githubRepo(plugin.releaseModel)).toSet
+    logger.info(s"updating ${githubRepos.size} Github repositories")
+    githubDownload.run(githubRepos)
   }
 
   private def parse(dateTime: String): OffsetDateTime =
@@ -153,12 +164,18 @@ class UpdateBintraySbtPlugins(
 object UpdateBintraySbtPlugins {
   def run(paths: DataPaths)(implicit mat: Materializer,
                             sys: ActorSystem): Unit = {
+    implicit val ec: ExecutionContext = sys.dispatcher
+    val githubDownload = new GithubDownload(paths)
+    val githubRepoExtractor = new GithubRepoExtractor(paths)
     for (bintrayClient <- BintrayClient.create(paths.credentials)) {
       val sbtPluginsData = SbtPluginsData(paths.ivysData)
-      val updater =
-        new UpdateBintraySbtPlugins(bintrayClient,
-                                    sbtPluginsData,
-                                    paths.ivysLastDownload)(sys.dispatcher)
+      val updater = new UpdateBintraySbtPlugins(
+        bintrayClient,
+        sbtPluginsData,
+        githubRepoExtractor,
+        githubDownload,
+        paths.ivysLastDownload
+      )
       Await.result(updater.update(), Duration.Inf)
     }
   }

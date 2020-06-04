@@ -69,7 +69,6 @@ object Main extends LazyLogging {
 
     val dataPaths = DataPaths(pathFromArgs)
 
-    val githubDownload = new GithubDownload(dataPaths)
     val steps = List(
       // List POMs of Bintray
       Step("list")({ () =>
@@ -96,12 +95,13 @@ object Main extends LazyLogging {
       ),
       // Download additional information about projects from Github
       Step("github")(
-        () => githubDownload.run()
+        () => GithubDownload.run(dataPaths)
       ),
       // Re-create the ElasticSearch index
-      Step("elastic")(
-        () => new SeedElasticSearch(dataPaths, githubDownload).run()
-      )
+      Step("elastic") { () =>
+        val githubDownload = new GithubDownload(dataPaths)
+        new SeedElasticSearch(dataPaths, githubDownload).run()
+      }
     )
 
     def updateClaims(): Unit = {
