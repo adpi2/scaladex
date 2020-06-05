@@ -10,7 +10,7 @@ import com.sksamuel.elastic4s.analyzers._
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.Success
 
 class SeedElasticSearch(paths: DataPaths, githubDownload: GithubDownload)(
@@ -146,51 +146,35 @@ class SeedElasticSearch(paths: DataPaths, githubDownload: GithubDownload)(
 
     log.info("loading update data")
     val projectConverter = new ProjectConvert(paths, githubDownload)
-    val newData = projectConverter(
-      PomsReader.loadAll(paths).collect {
-        case Success(pomAndMeta) => pomAndMeta
+    val newData = projectConverter(PomsReader.loadAll(paths))
+
+    var count = 0
+    for((project, releases) <- newData) {
+      val indexProject = esClient.execute {
+        indexInto(indexName / projectsCollection).source(project)
       }
-    )
 
-    val (projects, projectReleases) = newData.unzip
-    val releases = projectReleases.flatten
-
-    val progress = ProgressBar("Indexing releases", releases.size, log)
-    progress.start()
-    val bunch = 1000
-    releases.grouped(bunch).foreach { group =>
-      val bulkResults = Await.result(esClient.execute {
+      val indexReleases = esClient.execute {
         bulk(
-          group.map(
+          releases.map(
             release => indexInto(indexName / releasesCollection).source(release)
           )
         )
-      }, Duration.Inf)
-
-      if (bulkResults.hasFailures) {
-        bulkResults.failures.foreach(p => log.error(p.failureMessage))
-        log.error("Indexing releases failed")
       }
 
-      progress.stepBy(bunch)
-    }
-    progress.stop()
-
-    val bunch2 = 100
-    log.info(s"Indexing projects (${projects.size})")
-    projects.grouped(bunch2).foreach { group =>
-      val bulkResults = Await.result(esClient.execute {
-        bulk(
-          group.map(
-            project => indexInto(indexName / projectsCollection).source(project)
-          )
-        )
-      }, Duration.Inf)
-
-      if (bulkResults.hasFailures) {
-        bulkResults.failures.foreach(p => log.error(p.failureMessage))
-        log.error("Indexing projects failed")
+      val result = for {
+        bulkResult <- indexReleases
+        _ <- indexProject
+      } yield {
+        if (bulkResult.hasFailures) {
+          bulkResult.failures.foreach(p => log.error(p.failureMessage))
+          log.error(s"Indexing releases of ${project.repository} failed")
+        }
       }
+      Await.result(result, Duration.Inf)
+      count += 1
     }
+
+    log.info(s"$count projects indexed")
   }
 }
