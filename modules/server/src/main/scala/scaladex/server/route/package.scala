@@ -40,41 +40,21 @@ package object route {
       "page".as[Int] ? 1,
       "sort".?,
       "topics".as[String].*,
-      "targetTypes".as[String].*,
       "scalaVersions".as[String].*,
-      "scalaJsVersions".as[String].*,
-      "scalaNativeVersions".as[String].*,
-      "sbtVersions".as[String].*,
+      "platformVersions".as[String].*,
       "you".?,
       "contributingSearch".as[Boolean] ? false
     ).tmap {
-      case (
-            q,
-            page,
-            sort,
-            topics,
-            targetTypes,
-            scalaVersions,
-            scalaJsVersions,
-            scalaNativeVersions,
-            sbtVersions,
-            you,
-            contributingSearch
-          ) =>
-        val userRepos = you
-          .flatMap(_ => user.map(_.repos))
-          .getOrElse(Set())
+      case (q, page, sort, topics, scalaVersions, platformVersions, you, contributingSearch) =>
+        val userRepos = you.flatMap(_ => user.map(_.repos)).getOrElse(Set())
         search.SearchParams(
           q,
           page,
           sort,
           userRepos,
-          topics = topics.toList,
-          targetTypes = targetTypes.toList,
-          scalaVersions = scalaVersions.toList,
-          scalaJsVersions = scalaJsVersions.toList,
-          scalaNativeVersions = scalaNativeVersions.toList,
-          sbtVersions = sbtVersions.toList,
+          topics = topics.toSeq,
+          scalaVersions = scalaVersions.toSeq,
+          platformVersions = platformVersions.toSeq,
           contributingSearch = contributingSearch
         )
     }

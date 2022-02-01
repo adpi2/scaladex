@@ -35,20 +35,14 @@ class SearchPages(env: Env, searchEngine: SearchEngine)(
     complete {
       val resultsF = searchEngine.find(params)
       val topicsF = searchEngine.countByTopics(params, 50)
-      val platformTypesF = searchEngine.countByPlatformTypes(params, 10)
+      val platformVersionsF = searchEngine.countByPlatformVersions(params, 10)
       val scalaVersionsF = searchEngine.countByScalaVersions(params, 10)
-      val scalaJsVersionsF = searchEngine.countByScalaJsVersions(params, 10)
-      val scalaNativeVersionsF = searchEngine.countByScalaNativeVersions(params, 10)
-      val sbtVersionsF = searchEngine.countBySbtVersions(params, 10)
 
       for {
         Page(pagination, projects) <- resultsF
         topics <- topicsF
-        targetTypes <- platformTypesF
         scalaVersions <- scalaVersionsF
-        scalaJsVersions <- scalaJsVersionsF
-        scalaNativeVersions <- scalaNativeVersionsF
-        sbtVersions <- sbtVersionsF
+        platformVersions <- platformVersionsF
       } yield searchresult(
         env,
         params,
@@ -58,11 +52,8 @@ class SearchPages(env: Env, searchEngine: SearchEngine)(
         user,
         params.userRepos.nonEmpty,
         topics,
-        targetTypes,
         scalaVersions,
-        scalaJsVersions,
-        scalaNativeVersions,
-        sbtVersions
+        platformVersions
       )
     }
 }

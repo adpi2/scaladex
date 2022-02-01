@@ -7,6 +7,7 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import play.twirl.api.HtmlFormat
 import scaladex.core.model.Env
+import scaladex.core.model.Platform
 import scaladex.core.model.UserState
 import scaladex.core.service.SearchEngine
 import scaladex.core.service.WebDatabase
@@ -22,22 +23,16 @@ class FrontPage(env: Env, database: WebDatabase, searchEngine: SearchEngine)(imp
     val totalProjectsF = searchEngine.count()
     val totalArtifactsF = database.countArtifacts()
     val topicsF = searchEngine.countByTopics(50)
-    val platformsF = searchEngine.countByPlatformTypes(10)
     val scalaVersionsF = searchEngine.countByScalaVersions(10)
-    val scalaJsVersionsF = searchEngine.countByScalaJsVersions(10)
-    val scalaNativeVersionsF = searchEngine.countByScalaNativeVersions(10)
-    val sbtVersionsF = searchEngine.countBySbtVersison(10)
+    val platformVersionsF = searchEngine.countByPlatformVersions(10)
     val mostDependedUponF = searchEngine.getMostDependedUpon(limitOfProjects)
     val latestProjectsF = searchEngine.getLatest(limitOfProjects)
     for {
       totalProjects <- totalProjectsF
       totalArtifacts <- totalArtifactsF
       topics <- topicsF
-      platforms <- platformsF
+      platformVersions <- platformVersionsF
       scalaVersions <- scalaVersionsF
-      scalaJsVersions <- scalaJsVersionsF
-      scalaNativeVersions <- scalaNativeVersionsF
-      sbtVersions <- sbtVersionsF
       mostDependedUpon <- mostDependedUponF
       latestProjects <- latestProjectsF
     } yield {
@@ -57,10 +52,13 @@ class FrontPage(env: Env, database: WebDatabase, searchEngine: SearchEngine)(imp
         "Typelevel" -> "typelevel"
       )
 
+      val scalaJsVersions = platformVersions.collect { case (v: Platform.Version.Js, c) => (v, c) }
+      val scalaNativeVersions = platformVersions.collect { case (v: Platform.Version.Native, c) => (v, c) }
+      val sbtVersions = platformVersions.collect { case (v: Platform.Version.Sbt, c) => (v, c) }
+
       frontpage(
         env,
         topics,
-        platforms,
         scalaVersions,
         scalaJsVersions,
         scalaNativeVersions,

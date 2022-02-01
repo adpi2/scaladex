@@ -104,21 +104,9 @@ class RelevanceTest extends TestKit(ActorSystem("SbtActorTest")) with AsyncFunSu
     )
   }
 
-  test("java targetTypes") {
-    top(
-      SearchParams(targetTypes = List("java")),
-      List(
-        "lightbend" -> "config",
-        "neo4j" -> "neo4j",
-        "flyway" -> "flyway",
-        "gatling" -> "gatling"
-      )
-    )
-  }
-
   test("Scala.js targetTypes") {
     top(
-      SearchParams(targetTypes = List("js")),
+      SearchParams(platformVersions = List("sjs1")),
       List(
         "scala-js" -> "scala-js"
       )
@@ -148,7 +136,7 @@ class RelevanceTest extends TestKit(ActorSystem("SbtActorTest")) with AsyncFunSu
 
   test("Scala Native targetTypes") {
     top(
-      SearchParams(targetTypes = List("native")),
+      SearchParams(platformVersions = List("native0.4")),
       List(
         ("scalaz", "scalaz"),
         ("scopt", "scopt"),

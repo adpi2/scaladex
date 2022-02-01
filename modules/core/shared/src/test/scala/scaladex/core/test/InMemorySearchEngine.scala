@@ -3,7 +3,6 @@ package scaladex.core.test
 import scala.collection.mutable
 import scala.concurrent.Future
 
-import scaladex.core.model.BinaryVersion
 import scaladex.core.model.Category
 import scaladex.core.model.Platform
 import scaladex.core.model.Project
@@ -27,15 +26,9 @@ class InMemorySearchEngine extends SearchEngine {
 
   override def count(): Future[Long] = ???
 
-  override def countByPlatformTypes(limit: Int): Future[Seq[(Platform.PlatformType, Long)]] = ???
-
   override def countByScalaVersions(limit: Int): Future[Seq[(ScalaVersion, Long)]] = ???
 
-  override def countByScalaJsVersions(limit: Int): Future[Seq[(BinaryVersion, Long)]] = ???
-
-  override def countByScalaNativeVersions(limit: Int): Future[Seq[(BinaryVersion, Long)]] = ???
-
-  override def countBySbtVersison(limit: Int): Future[Seq[(BinaryVersion, Long)]] = ???
+  override def countByPlatformVersions(limit: Int): Future[Seq[(Platform.Version, Long)]] = ???
 
   override def countByTopics(limit: Int): Future[Seq[(String, Long)]] = ???
 
@@ -49,15 +42,9 @@ class InMemorySearchEngine extends SearchEngine {
 
   override def countByTopics(params: SearchParams, limit: Int): Future[Seq[(String, Long)]] = ???
 
-  override def countByPlatformTypes(params: SearchParams, limit: Int): Future[Seq[(Platform.PlatformType, Long)]] = ???
-
   override def countByScalaVersions(params: SearchParams, limit: Int): Future[Seq[(ScalaVersion, Long)]] = ???
 
-  override def countByScalaJsVersions(params: SearchParams, limit: Int): Future[Seq[(BinaryVersion, Long)]] = ???
-
-  override def countByScalaNativeVersions(params: SearchParams, limit: Int): Future[Seq[(BinaryVersion, Long)]] = ???
-
-  override def countBySbtVersions(params: SearchParams, limit: Int): Future[Seq[(BinaryVersion, Long)]] = ???
+  override def countByPlatformVersions(params: SearchParams, limit: Int): Future[Seq[(Platform.Version, Long)]] = ???
 
   override def getByCategory(category: Category, limit: Int): Future[Seq[ProjectDocument]] = ???
 

@@ -25,7 +25,6 @@ import com.sksamuel.elastic4s.requests.searches.sort.Sort
 import com.sksamuel.elastic4s.requests.searches.sort.SortOrder
 import com.typesafe.scalalogging.LazyLogging
 import io.circe._
-import scaladex.core.model.BinaryVersion
 import scaladex.core.model.Category
 import scaladex.core.model.GithubIssue
 import scaladex.core.model.Platform
@@ -132,27 +131,11 @@ class ElasticsearchEngine(esClient: ElasticClient, index: String)(implicit ec: E
     aggregations("githubInfo.topics.keyword", matchAllQuery(), limit)
       .map(_.sortBy(_._1))
 
-  def countByPlatformTypes(limit: Int): Future[Seq[(Platform.PlatformType, Long)]] =
-    aggregations("platformTypes", matchAllQuery(), limit)
-      .map(
-        _.flatMap {
-          case (platformType, count) =>
-            Platform.PlatformType.ofName(platformType).map((_, count))
-        }
-      )
-      .map(_.sortBy(_._1))
-
   def countByScalaVersions(limit: Int): Future[Seq[(ScalaVersion, Long)]] =
     scalaVersionAggregation("scalaVersions", matchAllQuery(), limit)
 
-  def countByScalaJsVersions(limit: Int): Future[Seq[(BinaryVersion, Long)]] =
-    versionAggregations("scalaJsVersions", matchAllQuery(), Platform.ScalaJs.isValid, limit)
-
-  def countByScalaNativeVersions(limit: Int): Future[Seq[(BinaryVersion, Long)]] =
-    versionAggregations("scalaNativeVersions", matchAllQuery(), Platform.ScalaNative.isValid, limit)
-
-  def countBySbtVersison(limit: Int): Future[Seq[(BinaryVersion, Long)]] =
-    versionAggregations("sbtVersions", matchAllQuery(), Platform.SbtPlugin.isValid, limit)
+  def countByPlatformVersions(limit: Int): Future[Seq[(Platform.Version, Long)]] =
+    platformVersionAggregations("platformVersions", matchAllQuery(), limit)
 
   override def getMostDependedUpon(limit: Int): Future[Seq[ProjectDocument]] = {
     val request = search(index)
@@ -244,32 +227,13 @@ class ElasticsearchEngine(esClient: ElasticClient, index: String)(implicit ec: E
     aggregations("githubInfo.topics.keyword", filteredSearchQuery(params), limit)
       .map(addMissing(params.topics))
 
-  override def countByPlatformTypes(params: SearchParams, limit: Int): Future[Seq[(Platform.PlatformType, Long)]] =
-    aggregations("platformTypes", filteredSearchQuery(params), limit)
-      .map(addMissing(params.targetTypes))
-      .map(
-        _.flatMap {
-          case (platformType, count) =>
-            Platform.PlatformType.ofName(platformType).map((_, count))
-        }
-      )
-      .map(_.sortBy(_._1))
-
   override def countByScalaVersions(params: SearchParams, limit: Int): Future[Seq[(ScalaVersion, Long)]] =
     scalaVersionAggregation("scalaVersions", filteredSearchQuery(params), limit)
       .map(addMissing(params.scalaVersions.flatMap(ScalaVersion.parse)))
 
-  override def countByScalaJsVersions(params: SearchParams, limit: Int): Future[Seq[(BinaryVersion, Long)]] =
-    versionAggregations("scalaJsVersions", filteredSearchQuery(params), Platform.ScalaJs.isValid, limit)
-      .map(addMissing(params.scalaJsVersions.flatMap(BinaryVersion.parse)))
-
-  override def countByScalaNativeVersions(params: SearchParams, limit: Int): Future[Seq[(BinaryVersion, Long)]] =
-    versionAggregations("scalaNativeVersions", filteredSearchQuery(params), Platform.ScalaNative.isValid, limit)
-      .map(addMissing(params.scalaNativeVersions.flatMap(BinaryVersion.parse)))
-
-  override def countBySbtVersions(params: SearchParams, limit: Int): Future[Seq[(BinaryVersion, Long)]] =
-    versionAggregations("sbtVersions", filteredSearchQuery(params), Platform.SbtPlugin.isValid, limit)
-      .map(addMissing(params.sbtVersions.flatMap(BinaryVersion.parse)))
+  override def countByPlatformVersions(params: SearchParams, limit: Int): Future[Seq[(Platform.Version, Long)]] =
+    platformVersionAggregations("platformVersions", filteredSearchQuery(params), limit)
+      .map(addMissing(params.platformVersions.flatMap(Platform.Version.parse)))
 
   override def getByCategory(category: Category, limit: Int): Future[Seq[ProjectDocument]] = {
     val query = must(termQuery("category.keyword", category.label))
@@ -296,20 +260,19 @@ class ElasticsearchEngine(esClient: ElasticClient, index: String)(implicit ec: E
       }
       .map(_.sortBy(_._1))
 
-  private def versionAggregations(
+  private def platformVersionAggregations(
       field: String,
       query: Query,
-      predicate: BinaryVersion => Boolean,
       limit: Int
-  ): Future[Seq[(BinaryVersion, Long)]] =
+  ): Future[Seq[(Platform.Version, Long)]] =
     aggregations(field, query, limit)
       .map { versionAgg =>
         for {
           (version, count) <- versionAgg.toList
-          binaryVersion <- BinaryVersion.parse(version) if predicate(binaryVersion)
-        } yield (binaryVersion, count)
+          platformVersion <- Platform.Version.parse(version)
+        } yield (platformVersion, count)
       }
-      .map(_.sortBy(_._1))
+      .map(_.sortBy(_._1)(Platform.Version.ordering.reverse))
 
   private def aggregations(field: String, query: Query, limit: Int): Future[Seq[(String, Long)]] = {
     val aggregationName = s"${field}_count"
@@ -342,13 +305,7 @@ class ElasticsearchEngine(esClient: ElasticClient, index: String)(implicit ec: E
       repositoriesQuery(params.userRepos.toSeq),
       optionalQuery(params.cli, cliQuery),
       topicsQuery(params.topics),
-      targetsQuery(
-        params.targetTypes,
-        params.scalaVersions,
-        params.scalaJsVersions,
-        params.scalaNativeVersions,
-        params.sbtVersions
-      ),
+      targetsQuery(params.scalaVersions, params.platformVersions),
       optionalQuery(params.targetFiltering)(targetQuery),
       optionalQuery(params.contributingSearch, contributingQuery),
       searchQuery(params.queryString, params.contributingSearch)
@@ -459,19 +416,10 @@ class ElasticsearchEngine(esClient: ElasticClient, index: String)(implicit ec: E
       termQuery("repository.keyword", repo.repository.value)
     )
 
-  private def targetsQuery(
-      targetTypes: Seq[String],
-      scalaVersions: Seq[String],
-      scalaJsVersions: Seq[String],
-      scalaNativeVersions: Seq[String],
-      sbtVersions: Seq[String]
-  ): Query =
+  private def targetsQuery(scalaVersions: Seq[String], platformVersions: Seq[String]): Query =
     must(
-      targetTypes.map(termQuery("platformTypes", _)) ++
-        scalaVersions.map(termQuery("scalaVersions", _)) ++
-        scalaJsVersions.map(termQuery("scalaJsVersions", _)) ++
-        scalaNativeVersions.map(termQuery("scalaNativeVersions", _)) ++
-        sbtVersions.map(termQuery("sbtVersions", _))
+      scalaVersions.map(termQuery("scalaVersions", _)) ++
+        platformVersions.map(termQuery("platformVersions", _))
     )
 
   private def targetQuery(target: Platform): Query =
@@ -537,7 +485,7 @@ class ElasticsearchEngine(esClient: ElasticClient, index: String)(implicit ec: E
   private def addMissing[T: Ordering](required: Seq[T])(result: Seq[(T, Long)]): Seq[(T, Long)] = {
     val missingLabels = required.toSet -- result.map(_._1)
     val toAdd = missingLabels.map(label => (label, 0L))
-    (result ++ toAdd).sortBy(_._1)
+    (result ++ toAdd).sortBy(_._1)(implicitly[Ordering[T]].reverse)
   }
 
   private def optionalQuery(condition: Boolean, query: Query): Query =

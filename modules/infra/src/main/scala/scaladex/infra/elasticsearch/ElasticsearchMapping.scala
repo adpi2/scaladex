@@ -55,12 +55,8 @@ object ElasticsearchMapping {
       ),
     keywordField("artifactNames").normalizer("lowercase"),
     dateField("creationDate"),
-    dateField("updateDate"),
-    keywordField("platformTypes"),
     keywordField("scalaVersions"),
-    keywordField("scalaJsVersions"),
-    keywordField("scalaNativeVersions"),
-    keywordField("sbtVersions"),
+    keywordField("platformVersions"),
     textField("primaryTopic")
       .analyzer("english")
       .fields(

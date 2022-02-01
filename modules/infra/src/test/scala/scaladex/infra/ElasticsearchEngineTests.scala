@@ -89,18 +89,8 @@ class ElasticsearchEngineTests extends AsyncFunSuite with Matchers with BeforeAn
     } yield (topics should contain).theSameElementsInOrderAs(expected)
   }
 
-  test("count by platform types") {
-    val expected =
-      Seq(Platform.PlatformType.Native -> 1L, Platform.PlatformType.Js -> 1L, Platform.PlatformType.Jvm -> 2L)
-    for {
-      _ <- searchEngine.insert(Cats.projectDocument)
-      _ <- searchEngine.refresh()
-      platformTypes <- searchEngine.countByPlatformTypes(10)
-    } yield (platformTypes should contain).theSameElementsInOrderAs(expected)
-  }
-
   test("count by Scala versions") {
-    val expected = Seq(ScalaVersion.`2.13` -> 1L, ScalaVersion.`3` -> 1L)
+    val expected = Seq(ScalaVersion.`3` -> 1L, ScalaVersion.`2.13` -> 1L)
     val params = SearchParams(queryString = "cats")
     for {
       _ <- searchEngine.insert(Cats.projectDocument)
@@ -109,24 +99,19 @@ class ElasticsearchEngineTests extends AsyncFunSuite with Matchers with BeforeAn
     } yield (scalaVersions should contain).theSameElementsInOrderAs(expected)
   }
 
-  test("count by Scala.js versions") {
-    val expected = Seq(Platform.ScalaJs.`0.6` -> 1L, Platform.ScalaJs.`1.x` -> 1L)
+  test("count by platform versions") {
+    val expected = Seq(
+      Platform.Version.Jvm -> 1L,
+      Platform.Version.Js(Platform.ScalaJs.`1.x`) -> 1L,
+      Platform.Version.Js(Platform.ScalaJs.`0.6`) -> 1L,
+      Platform.Version.Native(Platform.ScalaNative.`0.4`) -> 1L
+    )
     val params = SearchParams(queryString = "cats")
     for {
       _ <- searchEngine.insert(Cats.projectDocument)
       _ <- searchEngine.refresh()
-      scalaJsVersions <- searchEngine.countByScalaJsVersions(params, 3)
+      scalaJsVersions <- searchEngine.countByPlatformVersions(params, 8)
     } yield (scalaJsVersions should contain).theSameElementsInOrderAs(expected)
-  }
-
-  test("count by Scala Native versions") {
-    val expected = Seq(Platform.ScalaNative.`0.4` -> 1L)
-    val params = SearchParams(queryString = "cats")
-    for {
-      _ <- searchEngine.insert(Cats.projectDocument)
-      _ <- searchEngine.refresh()
-      scalaNativeVersions <- searchEngine.countByScalaNativeVersions(params, 3)
-    } yield (scalaNativeVersions should contain).theSameElementsInOrderAs(expected)
   }
 
   test("remove missing document should not fail") {

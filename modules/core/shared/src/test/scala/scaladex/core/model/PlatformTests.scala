@@ -50,9 +50,11 @@ class PlatformTests extends AsyncFunSpec with Matchers with OptionValues with Ta
     forAll(cases)((input, target) => parse(input) should contain(target))
   }
 
-  it("should parse a string to yield a ScalaTargetType") {
-    PlatformType.ofName("Js").value shouldBe PlatformType.Js
-    PlatformType.ofName("Jvm").value shouldBe PlatformType.Jvm
+  it("should parse a string to yield a Platform.Version") {
+    Platform.Version.parse("sjs1").get shouldBe Platform.Version.Js(MajorBinary(1))
+    Platform.Version.parse("jvm").get shouldBe Platform.Version.Jvm
+    Platform.Version.parse("native0.4").get shouldBe Platform.Version.Native(MinorBinary(0, 4))
+    Platform.Version.parse("sbt1.0").get shouldBe Platform.Version.Sbt(MinorBinary(1, 0))
   }
   it("Should encode and parse a Scala.js platform") {
     val platform = ScalaJs(ScalaVersion.`2.10`, MinorBinary(0, 6))

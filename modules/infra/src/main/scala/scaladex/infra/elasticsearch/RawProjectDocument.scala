@@ -7,7 +7,6 @@ import io.circe.Codec
 import io.circe.Printer
 import io.circe.generic.semiauto
 import scaladex.core.model.Artifact
-import scaladex.core.model.BinaryVersion
 import scaladex.core.model.Category
 import scaladex.core.model.Platform
 import scaladex.core.model.Project
@@ -24,11 +23,8 @@ case class RawProjectDocument(
     hasCli: Boolean,
     creationDate: Option[Instant],
     updateDate: Option[Instant],
-    platformTypes: Seq[String],
     scalaVersions: Seq[String],
-    scalaJsVersions: Seq[String],
-    scalaNativeVersions: Seq[String],
-    sbtVersions: Seq[String],
+    platformVersions: Seq[String],
     inverseProjectDependencies: Int,
     category: Option[String],
     formerReferences: Seq[Project.Reference],
@@ -41,11 +37,8 @@ case class RawProjectDocument(
     hasCli,
     creationDate,
     updateDate,
-    platformTypes.flatMap(Platform.PlatformType.ofName).sorted,
     scalaVersions.flatMap(ScalaVersion.parse).sorted,
-    scalaJsVersions.flatMap(BinaryVersion.parse).filter(Platform.ScalaJs.isValid).sorted,
-    scalaNativeVersions.flatMap(BinaryVersion.parse).filter(Platform.ScalaNative.isValid).sorted,
-    sbtVersions.flatMap(BinaryVersion.parse).filter(Platform.SbtPlugin.isValid).sorted,
+    platformVersions.flatMap(Platform.Version.parse).sorted,
     inverseProjectDependencies,
     category.flatMap(Category.byLabel.get),
     formerReferences,
@@ -68,11 +61,8 @@ object RawProjectDocument {
       hasCli,
       creationDate,
       updateDate,
-      platformTypes.map(_.name),
       scalaVersions.map(_.encode),
-      scalaJsVersions.map(_.toString),
-      scalaNativeVersions.map(_.toString),
-      sbtVersions.map(_.toString),
+      platformVersions.map(_.encode),
       inverseProjectDependencies,
       category.map(_.label),
       formerReferences,

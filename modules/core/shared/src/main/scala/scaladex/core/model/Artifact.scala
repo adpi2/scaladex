@@ -29,8 +29,6 @@ case class Artifact(
     isNonStandardLib: Boolean
 ) {
 
-  def fullPlatformVersion: String = platform.showVersion
-
   def isValid: Boolean = platform.isValid
 
   private def artifactHttpPath: String = s"/${projectRef.organization}/${projectRef.repository}/$artifactName"
@@ -52,11 +50,7 @@ case class Artifact(
   }
 
   def badgeUrl(env: Env): String =
-    s"${fullHttpUrl(env)}/latest-by-scala-version.svg" +
-      (platform match {
-        case _: Platform.ScalaJvm => ""
-        case _                    => s"?targetType=${platform.platformType}"
-      })
+    s"${fullHttpUrl(env)}/latest-by-scala-version.svg?platform=${platform.version.encode}"
 
   def sbtInstall: String = {
     val install = platform match {
@@ -157,13 +151,20 @@ case class Artifact(
 
       latest.getOrElse(version, version)
     }
-    List(
+
+    val targetParam = platform.version match {
+      case Platform.Version.Js(_) => Some("t" -> "JS")
+      case _                      => None
+    }
+
+    val params = List(
       "g" -> groupId,
       "a" -> artifactName.value,
       "v" -> version,
-      "t" -> platform.platformType.toString.toUpperCase,
       "sv" -> latestFor(platform.scalaVersion.toString)
-    )
+    ) ++ targetParam
+
+    params
       .map { case (k, v) => s"$k=$v" }
       .mkString(tryBaseUrl + "?", "&", "")
   }

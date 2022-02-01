@@ -16,6 +16,7 @@ import scaladex.core.model.ArtifactSelection
 import scaladex.core.model.Category
 import scaladex.core.model.Env
 import scaladex.core.model.GithubStatus
+import scaladex.core.model.Platform
 import scaladex.core.model.Project
 import scaladex.core.model.SemanticVersion
 import scaladex.core.model.UserState
@@ -59,47 +60,26 @@ class ProjectPages(env: Env, database: WebDatabase, localStorage: Storage)(
               projectOpt <- database.getProject(ref)
               project = projectOpt.getOrElse(throw new Exception(s"project ${ref} not found"))
               artifacts <- database.getArtifacts(project.reference)
-              // some computation
-              targetTypesWithScalaVersion = artifacts
-                .groupBy(_.platform.platformType)
-                .map {
-                  case (targetType, artifacts) =>
-                    (
-                      targetType,
-                      artifacts
-                        .map(_.fullPlatformVersion)
-                        .distinct
-                        .sorted
-                        .reverse
-                    )
-                }
-              artifactsWithVersions = artifacts
-                .groupBy(_.version)
-                .map {
-                  case (semanticVersion, artifacts) =>
-                    (
-                      semanticVersion,
-                      artifacts.groupBy(_.artifactName).map {
-                        case (artifactName, artifacts) =>
-                          (
-                            artifactName,
-                            artifacts.map(r => (r, r.fullPlatformVersion))
-                          )
-                      }
-                    )
-                }
-                .toSeq
-                .sortBy(_._1)
-                .reverse
-            } yield (
-              project,
-              targetTypesWithScalaVersion,
-              artifactsWithVersions
-            )
+            } yield (project, artifacts)
 
           onComplete(res) {
-            case Success((project, targetTypesWithScalaVersion, artifactsWithVersions)) =>
-              complete(view.html.artifacts(env, project, user, targetTypesWithScalaVersion, artifactsWithVersions))
+            case Success((project, artifacts)) =>
+              val platformByVersions = artifacts
+                .map(_.platform)
+                .distinct
+                .groupBy(_.version)
+                .view
+                .mapValues(_.sorted(Platform.ordering.reverse))
+                .toSeq
+                .sortBy(_._1)(Platform.Version.ordering.reverse)
+
+              val artifactsByVersions = artifacts
+                .groupBy(_.version)
+                .map { case (version, artifacts) => (version, artifacts.groupBy(_.artifactName).toSeq.sortBy(_._1)) }
+                .toSeq
+                .sortBy(_._1)(SemanticVersion.ordering.reverse)
+
+              complete(view.html.artifacts(env, project, user, platformByVersions, artifactsByVersions))
             case Failure(e) =>
               complete(StatusCodes.NotFound, view.html.notfound(env, user))
           }

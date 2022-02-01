@@ -3,10 +3,8 @@ package scaladex.core.model.search
 import java.time.Instant
 
 import scaladex.core.model.Artifact
-import scaladex.core.model.BinaryVersion
 import scaladex.core.model.Category
 import scaladex.core.model.Platform
-import scaladex.core.model.Platform._
 import scaladex.core.model.Project
 import scaladex.core.model.ScalaVersion
 
@@ -18,11 +16,8 @@ final case class ProjectDocument(
     hasCli: Boolean,
     creationDate: Option[Instant],
     updateDate: Option[Instant],
-    platformTypes: Seq[Platform.PlatformType],
-    scalaVersions: Seq[ScalaVersion],
-    scalaJsVersions: Seq[BinaryVersion],
-    scalaNativeVersions: Seq[BinaryVersion],
-    sbtVersions: Seq[BinaryVersion],
+    scalaVersions: Seq[ScalaVersion], // scala version families TODO move to BinaryVersion
+    platformVersions: Seq[Platform.Version],
     inverseProjectDependencies: Int,
     category: Option[Category],
     formerReferences: Seq[Project.Reference],
@@ -30,6 +25,11 @@ final case class ProjectDocument(
 ) {
   def reference: Project.Reference = Project.Reference(organization, repository)
   def id: String = reference.toString
+  def scalaJsVersions: Seq[Platform.Version.Js] = platformVersions.collect { case v @ Platform.Version.Js(_) => v }
+  def scalaNativeVersions: Seq[Platform.Version.Native] = platformVersions.collect {
+    case v @ Platform.Version.Native(_) => v
+  }
+  def sbtVersions: Seq[Platform.Version.Sbt] = platformVersions.collect { case v @ Platform.Version.Sbt(_) => v }
 }
 
 object ProjectDocument {
@@ -48,11 +48,8 @@ object ProjectDocument {
       hasCli,
       creationDate,
       updateDate = None,
-      platforms.map(_.platformType).sorted.distinct,
       platforms.flatMap(_.scalaVersion).sorted.distinct,
-      platforms.collect { case ScalaJs(_, scalaJsV) => scalaJsV }.sorted.distinct,
-      platforms.collect { case ScalaNative(_, scalaNativeV) => scalaNativeV }.sorted.distinct,
-      platforms.collect { case SbtPlugin(_, sbtV) => sbtV }.sorted.distinct,
+      platforms.map(_.version).sorted.distinct,
       inverseProjectDependencies,
       settings.category,
       formerReferences,

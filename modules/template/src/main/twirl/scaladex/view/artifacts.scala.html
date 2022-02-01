@@ -4,11 +4,10 @@
   env: Env,
   project: Project,
   user: Option[UserState],
-  targetTypesWithVersion: Map[Platform.PlatformType, Seq[String]],
-  semanticVersionWithArtifacts: Seq[(SemanticVersion, Map[Artifact.Name, Seq[(Artifact, String)]])]
+  platformsByVersions: Seq[(Platform.Version, Seq[Platform])],
+  artifactsByVersions: Seq[(SemanticVersion, Seq[(Artifact.Name, Seq[Artifact])])]
 )
-@allScalaVersions= @{targetTypesWithVersion.values.flatten}
-
+@allPlatforms = @{platformsByVersions.flatMap(_._2)}
 @main(env, title = project.repository.toString, showSearch = true, user) {
   <main class="artifacts">
     <div class="row">
@@ -28,65 +27,55 @@
           <th rowspan="2" class="version">Versions</th>
           <th rowspan="2" class="artifact">Artifacts</th>
 
-          @targetTypesWithVersion.map { case (targetType, versions) =>
-            <th colspan="@{versions.size}">
+          @platformsByVersions.map { case (platformVersion, platforms) =>
+            <th colspan="@{platforms.size}">
               <label>
-                <input type="checkbox" name="targetType" value="supported-target-type_@targetType"
+                <input type="checkbox" name="platform-version" value="@platformVersion.encode"
                        onclick="ScaladexClient.updateVisibleArtifactsInGrid()">
-                @targetType
+                @platformVersion
               </label>
             </th>
           }
         </tr>
         <tr>
-          @allScalaVersions.map { version =>
-            <th class="target">
+          @allPlatforms.map { platform =>
+            <th class="platform">
               <label>
-                <input type="checkbox" name="target" value="supported-scala-version_@version"
+                <input type="checkbox" name="platform" value="@platform.encode"
                        onclick="ScaladexClient.updateVisibleArtifactsInGrid()">
-                @version
+                @platform.scalaVersion
               </label>
             </th>
           }
         </tr>
       </thead>
 
-      @semanticVersionWithArtifacts.map { case (semanticVersion, artifactsByName) =>
-      <tbody class="version-line version-line-visible">
+      @artifactsByVersions.map { case (version, artifactsByNames) =>
+        <tbody class="version-line version-line-visible">
             <tr>
-              <td rowspan="@{artifactsByName.size + 1}" class="version">
-                @semanticVersion
+              <td rowspan="@{artifactsByNames.size + 1}" class="version">
+                @version
               </td>
             </tr>
-            @artifactsByName.map { case (artifactName, artifactsAndScalaVersion) =>
-              @defining(artifactsAndScalaVersion.map(_._2)) { scalaVersions =>
-              @defining(artifactsAndScalaVersion.map(_._1)) { artifacts =>
-              @defining( targetTypesWithVersion.filter { case (targetType, sVersions) =>
-                sVersions.intersect(scalaVersions).nonEmpty }.keys){ targetTypes =>
-                  <tr class="@({ if (targetTypes.isEmpty) { "" }
-                  else {
-                    ("artifact-line artifact-line-visible") +
-                      targetTypes.toList.distinct.map(" supported-target-type_" + _).mkString(" ") +
-                      scalaVersions.map(" supported-scala-version_" + _).mkString(" ")
-                  }
-                     })">
-                    <td class="artifact">
-                      @artifactName
+            @artifactsByNames.map { case (artifactName, artifacts) =>
+              @defining(artifacts.map(a => a.platform -> a).toMap) { platformToArtifact =>
+                <tr class="artifact-line artifact-line-visible @({
+                    platformToArtifact.keySet.map(_.version).map(version => version.encode).mkString(" ") + " " +
+                    platformToArtifact.keySet.map(platform => platform.encode).mkString(" ")
+                  })">
+                  <td class="artifact">@artifactName</td>
+                  @allPlatforms.map { platform =>
+                    <td class="platform" title="@version">
+                      @if(platformToArtifact.contains(platform)) {
+                        <a href="@platformToArtifact(platform).httpUrl" class="supported"></a>
+                      }
                     </td>
-                    @allScalaVersions.map { version =>
-                      <td class="target" title="@version">
-                        @if(scalaVersions.contains(version)) {
-                          <a href="@artifacts.headOption.map(_.httpUrl).getOrElse("")" class="supported-target"></a>
-                        }
-                      </td>
-                    }
                   }
-                </tr>
-              }
+              </tr>
             }
           }
         </tbody>
-        }
+      }
     </table>
 
       </div>

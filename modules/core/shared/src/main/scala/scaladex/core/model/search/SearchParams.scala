@@ -12,10 +12,7 @@ case class SearchParams(
     targetFiltering: Option[Platform] = None,
     cli: Boolean = false,
     topics: Seq[String] = Nil,
-    targetTypes: Seq[String] = Nil,
     scalaVersions: Seq[String] = Nil,
-    scalaJsVersions: Seq[String] = Nil,
-    scalaNativeVersions: Seq[String] = Nil,
-    sbtVersions: Seq[String] = Nil,
+    platformVersions: Seq[String] = Nil,
     contributingSearch: Boolean = false
 )
